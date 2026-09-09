@@ -55,62 +55,71 @@ var QRCode;!function(){function a(a){this.mode=c.MODE_8BIT_BYTE,this.data=a,this
 <script>
 const b64u = s => Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')), c => c.charCodeAt(0));
 
+function showBadLink(msg) {
+  document.getElementById('unlock').classList.add('hidden');
+  document.getElementById('badlink').classList.remove('hidden');
+  document.getElementById('badlink-msg').textContent = msg;
+}
+
 let P = null;
-try {
-  const raw = location.hash.slice(1);
-  if (!raw) throw new Error('empty');
-  P = JSON.parse(new TextDecoder().decode(b64u(raw)));
-} catch (_) {
-  document.getElementById('unlock').classList.add('hidden');
-  document.getElementById('badlink').classList.remove('hidden');
-  document.getElementById('badlink-msg').textContent = 'This link is missing or malformed.';
-}
-
-if (P && P.exp && Date.now() > P.exp) {
-  document.getElementById('unlock').classList.add('hidden');
-  document.getElementById('badlink').classList.remove('hidden');
-  document.getElementById('badlink-msg').textContent = 'This link has expired.';
-  P = null;
-}
-
-if (P) {
+(async () => {
+  const id = new URLSearchParams(location.search).get('id');
+  if (!id || !/^[A-Za-z0-9_-]+$/.test(id)) {
+    showBadLink('This link is missing or malformed.');
+    return;
+  }
+  try {
+    const res = await fetch('d/' + id + '.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error('not found');
+    P = await res.json();
+  } catch (_) {
+    showBadLink('This link has already been used or has expired. Ask the dojo for a new one.');
+    return;
+  }
+  if (P && P.exp && Date.now() > P.exp) {
+    showBadLink('This link has expired. Ask the dojo for a new one.');
+    P = null;
+    return;
+  }
   if (!window.crypto || !window.crypto.subtle) {
     document.getElementById('compat-warning').classList.remove('hidden');
     document.getElementById('open').disabled = true;
   }
-  document.getElementById('open').onclick = async () => {
-    const e = document.getElementById('error');
-    e.textContent = '';
-    if (!window.crypto || !window.crypto.subtle) {
-      document.getElementById('compat-warning').classList.remove('hidden');
-      return;
-    }
-    try {
-      const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(document.getElementById('password').value), 'PBKDF2', false, ['deriveKey']);
-      const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64u(P.salt), iterations: P.iterations, hash: 'SHA-256' }, material, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
-      const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64u(P.iv), tagLength: 128 }, key, b64u(P.data));
-      const d = JSON.parse(new TextDecoder().decode(plain));
-      document.getElementById('name').textContent = d.name;
-      new QRCode(document.getElementById('qr'), { text: d.config, width: 260, height: 260, correctLevel: QRCode.CorrectLevel.M });
-      document.getElementById('download').onclick = () => {
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([d.config], { type: 'text/plain' }));
-        a.download = 'dojo-wireguard.conf';
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-      };
-      document.getElementById('unlock').classList.add('hidden');
-      document.getElementById('content').classList.remove('hidden');
-    } catch (err) {
-      e.textContent = (err && err.name === 'OperationError')
-        ? 'Could not unlock. Check the passphrase and try again.'
-        : 'Unexpected error (' + (err && err.message || 'unknown') + '). Try opening this link in Chrome or Safari directly.';
-    }
-  };
-  document.getElementById('password').addEventListener('keydown', e => {
-    if (e.key === 'Enter') document.getElementById('open').click();
-  });
-}
+})();
+
+document.getElementById('open').onclick = async () => {
+  const e = document.getElementById('error');
+  e.textContent = '';
+  if (!P) { e.textContent = 'Still loading — try again in a moment.'; return; }
+  if (!window.crypto || !window.crypto.subtle) {
+    document.getElementById('compat-warning').classList.remove('hidden');
+    return;
+  }
+  try {
+    const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(document.getElementById('password').value), 'PBKDF2', false, ['deriveKey']);
+    const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64u(P.salt), iterations: P.iterations, hash: 'SHA-256' }, material, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64u(P.iv), tagLength: 128 }, key, b64u(P.data));
+    const d = JSON.parse(new TextDecoder().decode(plain));
+    document.getElementById('name').textContent = d.name;
+    new QRCode(document.getElementById('qr'), { text: d.config, width: 260, height: 260, correctLevel: QRCode.CorrectLevel.M });
+    document.getElementById('download').onclick = () => {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([d.config], { type: 'text/plain' }));
+      a.download = 'dojo-wireguard.conf';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    };
+    document.getElementById('unlock').classList.add('hidden');
+    document.getElementById('content').classList.remove('hidden');
+  } catch (err) {
+    e.textContent = (err && err.name === 'OperationError')
+      ? 'Could not unlock. Check the passphrase and try again.'
+      : 'Unexpected error (' + (err && err.message || 'unknown') + '). Try opening this link in Chrome or Safari directly.';
+  }
+};
+document.getElementById('password').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('open').click();
+});
 </script>
 </body>
 </html>
