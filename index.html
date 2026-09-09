@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>AJ Karate Private VPN Access</title>
+<style>
+body{font:16px system-ui,sans-serif;background:#071019;color:#eef7fa;margin:0;padding:24px}
+.box{max-width:620px;margin:auto;background:#101d27;border:1px solid #29404f;border-radius:14px;padding:24px}
+h1{color:#18d8e8;font-size:25px}
+input,button{font:inherit;padding:12px;border-radius:8px}
+input{box-sizing:border-box;width:100%;background:#fff;color:#111;border:0;margin:8px 0 12px}
+button{border:0;background:#18d8e8;color:#041014;font-weight:700;cursor:pointer}
+.hidden{display:none}
+#qr{display:block;max-width:320px;width:100%;margin:18px auto;background:#fff;padding:10px}
+.note{color:#b9cad3;line-height:1.55}
+.error{color:#ff7b8c}
+a{color:#18d8e8}
+footer{margin-top:18px;font-size:.7rem;color:#3a4b57;text-align:center}
+</style>
+</head>
+<body>
+<main class="box">
+  <h1>AJ Karate Private Livestream Access</h1>
+
+  <section id="badlink" class="hidden">
+    <p class="error" id="badlink-msg"></p>
+    <p class="note">Ask the dojo for a new link.</p>
+  </section>
+
+  <section id="unlock">
+    <p>This encrypted page contains the WireGuard access assigned to your household.</p>
+    <p id="compat-warning" class="error hidden">Your browser doesn't support the encryption used here. Please open this link directly in Chrome or Safari instead.</p>
+    <label for="password">Passphrase provided separately</label>
+    <input id="password" type="password" autocomplete="off" autofocus>
+    <button id="open">Unlock access</button>
+    <p id="error" class="error"></p>
+  </section>
+
+  <section id="content" class="hidden">
+    <h2 id="name"></h2>
+    <p class="note">Phone/tablet: scan the QR below from WireGuard. If this page is open on the same device, download the configuration and import it in WireGuard instead.</p>
+    <img id="qr" alt="Household WireGuard QR code">
+    <p><button id="download">Download WireGuard configuration</button></p>
+    <p class="note">Activate the tunnel, then open <b>http://watch.dojo</b> (fallback: <b>http://10.6.0.1</b>). Keep this link and passphrase private. Contact the dojo if either may have been shared.</p>
+  </section>
+
+  <footer>AJ Bartlinski's Karate Supercenter &middot; Powered by Sterba Cyber Solutions</footer>
+</main>
+<script>
+const b64u = s => Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')), c => c.charCodeAt(0));
+
+let P = null;
+try {
+  const raw = location.hash.slice(1);
+  if (!raw) throw new Error('empty');
+  P = JSON.parse(new TextDecoder().decode(b64u(raw)));
+} catch (_) {
+  document.getElementById('unlock').classList.add('hidden');
+  document.getElementById('badlink').classList.remove('hidden');
+  document.getElementById('badlink-msg').textContent = 'This link is missing or malformed.';
+}
+
+if (P && P.exp && Date.now() > P.exp) {
+  document.getElementById('unlock').classList.add('hidden');
+  document.getElementById('badlink').classList.remove('hidden');
+  document.getElementById('badlink-msg').textContent = 'This link has expired.';
+  P = null;
+}
+
+if (P) {
+  if (!window.crypto || !window.crypto.subtle) {
+    document.getElementById('compat-warning').classList.remove('hidden');
+    document.getElementById('open').disabled = true;
+  }
+  document.getElementById('open').onclick = async () => {
+    const e = document.getElementById('error');
+    e.textContent = '';
+    if (!window.crypto || !window.crypto.subtle) {
+      document.getElementById('compat-warning').classList.remove('hidden');
+      return;
+    }
+    try {
+      const material = await crypto.subtle.importKey('raw', new TextEncoder().encode(document.getElementById('password').value), 'PBKDF2', false, ['deriveKey']);
+      const key = await crypto.subtle.deriveKey({ name: 'PBKDF2', salt: b64u(P.salt), iterations: P.iterations, hash: 'SHA-256' }, material, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+      const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64u(P.iv), tagLength: 128 }, key, b64u(P.data));
+      const d = JSON.parse(new TextDecoder().decode(plain));
+      document.getElementById('name').textContent = d.name;
+      document.getElementById('qr').src = 'data:image/png;base64,' + d.qr;
+      document.getElementById('download').onclick = () => {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([d.config], { type: 'text/plain' }));
+        a.download = 'dojo-wireguard.conf';
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      };
+      document.getElementById('unlock').classList.add('hidden');
+      document.getElementById('content').classList.remove('hidden');
+    } catch (err) {
+      e.textContent = (err && err.name === 'OperationError')
+        ? 'Could not unlock. Check the passphrase and try again.'
+        : 'Unexpected error (' + (err && err.message || 'unknown') + '). Try opening this link in Chrome or Safari directly.';
+    }
+  };
+  document.getElementById('password').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('open').click();
+  });
+}
+</script>
+</body>
+</html>
