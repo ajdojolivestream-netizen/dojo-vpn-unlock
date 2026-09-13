@@ -106,7 +106,7 @@ let P = null;
 document.getElementById('open').onclick = async () => {
   const e = document.getElementById('error');
   e.textContent = '';
-  if (!P) { e.textContent = 'Still loading — try again in a moment.'; return; }
+  if (!P) { e.textContent = 'Still loading, try again in a moment.'; return; }
   if (!window.crypto || !window.crypto.subtle) {
     document.getElementById('compat-warning').classList.remove('hidden');
     return;
