@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src 'self'; img-src 'self' data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
 <title>AJ Karate Private VPN Access</title>
 <style>
 body{font:16px system-ui,sans-serif;background:#071019;color:#eef7fa;margin:0;padding:24px}
@@ -84,33 +84,12 @@ let P = null;
     showBadLink('This link is missing or malformed.');
     return;
   }
-  // TEMPORARY DIAGNOSTIC MODE (2026-09-16) — shows the real underlying
-  // fetch failure instead of hiding it behind the generic message, to
-  // track down a persistent "already used or expired" that couldn't be
-  // reproduced from the server side. Safe to revert once resolved.
-  const fetchUrl = new URL('d/' + id + '.json', location.href).href;
-  const startedAt = Date.now();
   try {
     const res = await fetch('d/' + id + '.json', { cache: 'no-store' });
-    const elapsed = Date.now() - startedAt;
-    if (!res.ok) {
-      const msgEl = document.getElementById('badlink-msg');
-      showBadLink('This link has already been used or has expired. Ask the dojo for a new one.'
-        + '\n\n[DEBUG] HTTP ' + res.status + ' ' + res.statusText + ' after ' + elapsed + 'ms'
-        + '\nURL: ' + fetchUrl
-        + '\nUA: ' + navigator.userAgent);
-      msgEl.style.whiteSpace = 'pre-wrap';
-      return;
-    }
+    if (!res.ok) throw new Error('not found');
     P = await res.json();
-  } catch (err) {
-    const elapsed = Date.now() - startedAt;
-    const msgEl = document.getElementById('badlink-msg');
-    showBadLink('This link has already been used or has expired. Ask the dojo for a new one.'
-      + '\n\n[DEBUG] ' + (err && err.name || 'Error') + ': ' + (err && err.message || String(err)) + ' after ' + elapsed + 'ms'
-      + '\nURL: ' + fetchUrl
-      + '\nUA: ' + navigator.userAgent);
-    msgEl.style.whiteSpace = 'pre-wrap';
+  } catch (_) {
+    showBadLink('This link has already been used or has expired. Ask the dojo for a new one.');
     return;
   }
   if (P && P.exp && Date.now() > P.exp) {
