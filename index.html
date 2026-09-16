@@ -84,12 +84,33 @@ let P = null;
     showBadLink('This link is missing or malformed.');
     return;
   }
+  // TEMPORARY DIAGNOSTIC MODE (2026-09-16) — shows the real underlying
+  // fetch failure instead of hiding it behind the generic message, to
+  // track down a persistent "already used or expired" that couldn't be
+  // reproduced from the server side. Safe to revert once resolved.
+  const fetchUrl = new URL('d/' + id + '.json', location.href).href;
+  const startedAt = Date.now();
   try {
     const res = await fetch('d/' + id + '.json', { cache: 'no-store' });
-    if (!res.ok) throw new Error('not found');
+    const elapsed = Date.now() - startedAt;
+    if (!res.ok) {
+      const msgEl = document.getElementById('badlink-msg');
+      showBadLink('This link has already been used or has expired. Ask the dojo for a new one.'
+        + '\n\n[DEBUG] HTTP ' + res.status + ' ' + res.statusText + ' after ' + elapsed + 'ms'
+        + '\nURL: ' + fetchUrl
+        + '\nUA: ' + navigator.userAgent);
+      msgEl.style.whiteSpace = 'pre-wrap';
+      return;
+    }
     P = await res.json();
-  } catch (_) {
-    showBadLink('This link has already been used or has expired. Ask the dojo for a new one.');
+  } catch (err) {
+    const elapsed = Date.now() - startedAt;
+    const msgEl = document.getElementById('badlink-msg');
+    showBadLink('This link has already been used or has expired. Ask the dojo for a new one.'
+      + '\n\n[DEBUG] ' + (err && err.name || 'Error') + ': ' + (err && err.message || String(err)) + ' after ' + elapsed + 'ms'
+      + '\nURL: ' + fetchUrl
+      + '\nUA: ' + navigator.userAgent);
+    msgEl.style.whiteSpace = 'pre-wrap';
     return;
   }
   if (P && P.exp && Date.now() > P.exp) {
